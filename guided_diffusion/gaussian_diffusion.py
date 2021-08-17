@@ -470,8 +470,8 @@ class GaussianDiffusion:
         progress=False,
         skip_timesteps=0,
         init_image=None,
-        randomize_class=False,
-        custom_classes=None,
+        randomize_class=True,
+        clip_scores=None,
     ):
         """
         Generate samples from the model.
@@ -506,9 +506,11 @@ class GaussianDiffusion:
             skip_timesteps=skip_timesteps,
             init_image=init_image,
             randomize_class=randomize_class,
-            custom_classes=custom_classes,
+            clip_scores=clip_scores,
         ):
             final = sample
+        if final is None:
+            raise RuntimeError("No samples generated!")
         return final["sample"]
 
     def p_sample_loop_progressive(
@@ -524,8 +526,8 @@ class GaussianDiffusion:
         progress=False,
         skip_timesteps=0,
         init_image=None,
-        randomize_class=False,
-        custom_classes=None,
+        randomize_class=True,
+        clip_scores=None, # (afiaka87) - add clip scores for class sampling
     ):
         """
         Generate samples from the model and yield intermediate samples from
@@ -554,32 +556,30 @@ class GaussianDiffusion:
             img = init_image * fac_1 + img * fac_2
 
         if progress:
-            # Lazy import so that we don't depend on tqdm.
             from tqdm.auto import tqdm
+            # Lazy import so that we don't depend on tqdm.
             indices = tqdm(indices)
 
         for i in indices:
             t = th.tensor([i] * shape[0], device=device)
             if randomize_class and 'y' in model_kwargs:
-                if custom_classes is not None:
-                    rand_idx = th.randint(low=0, high=len(
-                        custom_classes), size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
-                    model_kwargs['y'] = custom_classes[rand_idx].to(
-                        model_kwargs['y'].device)
+                # (afiaka87) - add clip_scores for class sampling. 
+                # `clip_scores` should be of type `Tuple(indices, torch.distributions.Categorical)
+                if clip_scores is not None: 
+                    custom_class_indices = clip_scores[0]
+                    imagenet_probs = clip_scores[1]
+                    sample_idx = imagenet_probs.sample().to(model_kwargs["y"].device)
+                    current_class_idx = custom_class_indices[sample_idx].to(model_kwargs["y"].device).to(int)
                 else:
-                    model_kwargs['y'] = th.randint(
-                        low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
-
+                    current_class_idx = th.randint(low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
+                model_kwargs["y"] = current_class_idx
+            
             with th.no_grad():
-                out = self.p_sample(
-                    model,
-                    img,
-                    t,
-                    clip_denoised=clip_denoised,
-                    denoised_fn=denoised_fn,
-                    cond_fn=cond_fn,
-                    model_kwargs=model_kwargs,
-                )
+                out = self.p_sample(model, img, t, 
+                    clip_denoised=clip_denoised, 
+                    denoised_fn=denoised_fn, 
+                    cond_fn=cond_fn, 
+                    model_kwargs=model_kwargs)
                 yield out
                 img = out["sample"]
 
@@ -689,8 +689,6 @@ class GaussianDiffusion:
         skip_timesteps=0,
         init_image=None,
         eta=0.0,
-        skip_timesteps=0,
-        init_image=None,
         randomize_class=False,
         custom_classes=None,
     ):
@@ -713,12 +711,12 @@ class GaussianDiffusion:
             skip_timesteps=skip_timesteps,
             init_image=init_image,
             eta=eta,
-            skip_timesteps=skip_timesteps,
-            init_image=init_image,
             randomize_class=randomize_class,
             custom_classes=custom_classes,
         ):
             final = sample
+        if final is None:
+            raise RuntimeError("No samples generated")
         return final["sample"]
 
     def ddim_sample_loop_progressive(
@@ -735,8 +733,6 @@ class GaussianDiffusion:
         skip_timesteps=0,
         init_image=None,
         eta=0.0,
-        skip_timesteps=0,
-        init_image=None,
         randomize_class=False,
         custom_classes=None,
     ):
