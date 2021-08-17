@@ -10,6 +10,7 @@ Docstrings have been added, as well as DDIM sampling and a new collection of bet
 
 import enum
 import math
+from data.imagenet1000_clsidx_to_labels import IMAGENET_CLASSES
 
 import numpy as np
 import torch as th
@@ -570,6 +571,8 @@ class GaussianDiffusion:
                     imagenet_probs = clip_scores[1]
                     sample_idx = imagenet_probs.sample().to(model_kwargs["y"].device)
                     current_class_idx = custom_class_indices[sample_idx].to(model_kwargs["y"].device).to(int)
+                    if progress:
+                        indices.set_description_str(f"Class '{IMAGENET_CLASSES[current_class_idx.item()]}'")
                 else:
                     current_class_idx = th.randint(low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
                 model_kwargs["y"] = current_class_idx
@@ -690,7 +693,7 @@ class GaussianDiffusion:
         init_image=None,
         eta=0.0,
         randomize_class=False,
-        custom_classes=None,
+        clip_scores=None,
     ):
         """
         Generate samples from the model using DDIM.
@@ -712,7 +715,7 @@ class GaussianDiffusion:
             init_image=init_image,
             eta=eta,
             randomize_class=randomize_class,
-            custom_classes=custom_classes,
+            clip_scores=clip_scores,
         ):
             final = sample
         if final is None:
@@ -734,13 +737,15 @@ class GaussianDiffusion:
         init_image=None,
         eta=0.0,
         randomize_class=False,
-        custom_classes=None,
+        clip_scores=None, # (afiaka87) - add clip scores for class sampling
     ):
         """
-        Use DDIM to sample from the model and yield intermediate samples from
-        each timestep of DDIM.
+        Generate samples from the model and yield intermediate samples from
+        each timestep of diffusion.
 
-        Same usage as p_sample_loop_progressive().
+        Arguments are the same as p_sample_loop().
+        Returns a generator over dicts, where each dict is the return value of
+        p_sample().
         """
         if device is None:
             device = next(model.parameters()).device
@@ -754,28 +759,32 @@ class GaussianDiffusion:
             init_image = th.zeros_like(img)
 
         indices = list(range(self.num_timesteps - skip_timesteps))[::-1]
+
         if init_image is not None:
             fac_1 = self.sqrt_alphas_cumprod[indices[0]]
             fac_2 = self.sqrt_one_minus_alphas_cumprod[indices[0]]
             img = init_image * fac_1 + img * fac_2
 
         if progress:
-            # Lazy import so that we don't depend on tqdm.
             from tqdm.auto import tqdm
-
+            # Lazy import so that we don't depend on tqdm.
             indices = tqdm(indices)
 
         for i in indices:
             t = th.tensor([i] * shape[0], device=device)
             if randomize_class and 'y' in model_kwargs:
-                if custom_classes is not None:
-                    rand_idx = th.randint(low=0, high=len(
-                        custom_classes), size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
-                    model_kwargs['y'] = custom_classes[rand_idx].to(
-                        model_kwargs['y'].device)
+                # (afiaka87) - add clip_scores for class sampling. 
+                # `clip_scores` should be of type `Tuple(indices, torch.distributions.Categorical)
+                if clip_scores is not None: 
+                    custom_class_indices = clip_scores[0]
+                    imagenet_probs = clip_scores[1]
+                    sample_idx = imagenet_probs.sample().to(model_kwargs["y"].device)
+                    current_class_idx = custom_class_indices[sample_idx].to(model_kwargs["y"].device).to(int)
+                    if progress:
+                        indices.set_description_str(f"Class '{IMAGENET_CLASSES[current_class_idx.item()]}'")
                 else:
-                    model_kwargs['y'] = th.randint(
-                        low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
+                    current_class_idx = th.randint(low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
+                model_kwargs["y"] = current_class_idx
             with th.no_grad():
                 out = self.ddim_sample(
                     model,
