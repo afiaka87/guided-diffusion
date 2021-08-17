@@ -4,8 +4,8 @@ https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0
 
 Docstrings have been added, as well as DDIM sampling and a new collection of beta schedules.
 
-Class randomization by crowsonkb https://github.com/crowsonkb/guided-diffuion
-Custom class list by Clay M. https://github.com/afiaka87/guided-diffusion 
+- Class randomization by crowsonkb https://github.com/crowsonkb/guided-diffuion
+- CLIP guided class randomization by Clay Mullis https://github.com/afiaka87/guided-diffusion 
 """
 
 import enum
@@ -754,7 +754,6 @@ class GaussianDiffusion:
             init_image = th.zeros_like(img)
 
         indices = list(range(self.num_timesteps - skip_timesteps))[::-1]
-
         if init_image is not None:
             fac_1 = self.sqrt_alphas_cumprod[indices[0]]
             fac_2 = self.sqrt_one_minus_alphas_cumprod[indices[0]]
