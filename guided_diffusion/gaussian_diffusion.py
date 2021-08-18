@@ -571,10 +571,10 @@ class GaussianDiffusion:
                     imagenet_probs = clip_scores[1]
                     sample_idx = imagenet_probs.sample().to(model_kwargs["y"].device)
                     current_class_idx = custom_class_indices[sample_idx].to(model_kwargs["y"].device).to(int)
-                    if progress:
-                        indices.set_description_str(f"Class '{IMAGENET_CLASSES[current_class_idx.item()]}'")
                 else:
                     current_class_idx = th.randint(low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
+                if progress:
+                    indices.set_description_str(f"Class '{IMAGENET_CLASSES[current_class_idx.item()]}'")
                 model_kwargs["y"] = current_class_idx
             
             with th.no_grad():
