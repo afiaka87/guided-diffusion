@@ -472,7 +472,7 @@ class GaussianDiffusion:
         skip_timesteps=0,
         init_image=None,
         randomize_class=True,
-        clip_scores=None,
+        custom_classes=[],
     ):
         """
         Generate samples from the model.
@@ -507,7 +507,7 @@ class GaussianDiffusion:
             skip_timesteps=skip_timesteps,
             init_image=init_image,
             randomize_class=randomize_class,
-            clip_scores=clip_scores,
+            custom_classes=custom_classes,
         ):
             final = sample
         if final is None:
@@ -528,7 +528,7 @@ class GaussianDiffusion:
         skip_timesteps=0,
         init_image=None,
         randomize_class=True,
-        clip_scores=None, # (afiaka87) - add clip scores for class sampling
+        custom_classes=[],
     ):
         """
         Generate samples from the model and yield intermediate samples from
@@ -556,26 +556,21 @@ class GaussianDiffusion:
             fac_2 = self.sqrt_one_minus_alphas_cumprod[indices[0]]
             img = init_image * fac_1 + img * fac_2
 
+        from tqdm.auto import tqdm
         if progress:
-            from tqdm.auto import tqdm
-            # Lazy import so that we don't depend on tqdm.
             indices = tqdm(indices)
 
         for i in indices:
             t = th.tensor([i] * shape[0], device=device)
             if randomize_class and 'y' in model_kwargs:
-                # (afiaka87) - add clip_scores for class sampling. 
-                # `clip_scores` should be of type `Tuple(indices, torch.distributions.Categorical)
-                if clip_scores is not None: 
-                    custom_class_indices = clip_scores[0]
-                    imagenet_probs = clip_scores[1]
-                    sample_idx = imagenet_probs.sample().to(model_kwargs["y"].device)
-                    current_class_idx = custom_class_indices[sample_idx].to(model_kwargs["y"].device).to(int)
+                if len(custom_classes) > 0:
+                    rand_custom_class_n = th.randint(low=0, high=len(custom_classes), size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
+                    custom_class = custom_classes[rand_custom_class_n]
+
+                    model_kwargs['y'] = custom_class
                 else:
                     current_class_idx = th.randint(low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
-                if progress:
-                    indices.set_description_str(f"Class '{IMAGENET_CLASSES[current_class_idx.item()]}'")
-                model_kwargs["y"] = current_class_idx
+                    model_kwargs["y"] = current_class_idx
             
             with th.no_grad():
                 out = self.p_sample(model, img, t, 
@@ -693,7 +688,7 @@ class GaussianDiffusion:
         init_image=None,
         eta=0.0,
         randomize_class=False,
-        clip_scores=None,
+        custom_classes=[],
     ):
         """
         Generate samples from the model using DDIM.
@@ -715,7 +710,7 @@ class GaussianDiffusion:
             init_image=init_image,
             eta=eta,
             randomize_class=randomize_class,
-            clip_scores=clip_scores,
+            custom_classes=custom_classes,
         ):
             final = sample
         if final is None:
@@ -737,7 +732,7 @@ class GaussianDiffusion:
         init_image=None,
         eta=0.0,
         randomize_class=False,
-        clip_scores=None, # (afiaka87) - add clip scores for class sampling
+        custom_classes=[], # (afiaka87) - add clip scores for class sampling
     ):
         """
         Generate samples from the model and yield intermediate samples from
@@ -773,18 +768,15 @@ class GaussianDiffusion:
         for i in indices:
             t = th.tensor([i] * shape[0], device=device)
             if randomize_class and 'y' in model_kwargs:
-                # (afiaka87) - add clip_scores for class sampling. 
-                # `clip_scores` should be of type `Tuple(indices, torch.distributions.Categorical)
-                if clip_scores is not None: 
-                    custom_class_indices = clip_scores[0]
-                    imagenet_probs = clip_scores[1]
-                    sample_idx = imagenet_probs.sample().to(model_kwargs["y"].device)
-                    current_class_idx = custom_class_indices[sample_idx].to(model_kwargs["y"].device).to(int)
-                    if progress:
-                        indices.set_description_str(f"Class '{IMAGENET_CLASSES[current_class_idx.item()]}'")
+                if len(custom_classes) > 0:
+                    rand_custom_class_n = th.randint(low=0, high=len(custom_classes), size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
+                    custom_class = custom_classes[rand_custom_class_n]
+                    print(f"Class '{IMAGENET_CLASSES[custom_class.item()]}'")
+                    model_kwargs['y'] = custom_class
                 else:
                     current_class_idx = th.randint(low=0, high=model.num_classes, size=model_kwargs['y'].shape, device=model_kwargs['y'].device)
-                model_kwargs["y"] = current_class_idx
+                    print(f"Class '{IMAGENET_CLASSES[current_class_idx]}'")
+                    model_kwargs["y"] = current_class_idx
             with th.no_grad():
                 out = self.ddim_sample(
                     model,
